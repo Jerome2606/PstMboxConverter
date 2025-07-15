@@ -2,6 +2,15 @@ version = 1
 requires-python = ">=3.11"
 
 [[package]]
+name = "altgraph"
+version = "0.17.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/a8/7145824cf0b9e3c28046520480f207df47e927df83aa9555fb47f8505922/altgraph-0.17.4.tar.gz", hash = "sha256:1b5afbb98f6c4dcadb2e2ae6ab9fa994bbb8c1d75f4fa96d340f9437ae454406", size = 48418 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/3f/3bc3f1d83f6e4a7fcb834d3720544ca597590425be5ba9db032b2bf322a2/altgraph-0.17.4-py2.py3-none-any.whl", hash = "sha256:642743b4750de17e655e6711601b077bc6598dbfa3ba5fa2b2a35ce12b508dff", size = 21212 },
+]
+
+[[package]]
 name = "ansicon"
 version = "1.89.0"
 source = { registry = "https://pypi.org/simple" }
@@ -317,6 +326,18 @@ wheels = [
 ]
 
 [[package]]
+name = "macholib"
+version = "1.16.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "altgraph" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/95/ee/af1a3842bdd5902ce133bd246eb7ffd4375c38642aeb5dc0ae3a0329dfa2/macholib-1.16.3.tar.gz", hash = "sha256:07ae9e15e8e4cd9a788013d81f5908b3609aa76f9b1421bae9c4d7606ec86a30", size = 59309 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/5d/c059c180c84f7962db0aeae7c3b9303ed1d73d76f2bfbc32bc231c8be314/macholib-1.16.3-py2.py3-none-any.whl", hash = "sha256:0e315d7583d38b8c77e815b1ecbdbf504a8258d8b3e17b61165c6feb60d18f2c", size = 38094 },
+]
+
+[[package]]
 name = "markupsafe"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -384,6 +405,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pefile"
+version = "2024.8.26"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/4f/2750f7f6f025a1507cd3b7218691671eecfd0bbebebe8b39aa0fe1d360b8/pefile-2024.8.26.tar.gz", hash = "sha256:3ff6c5d8b43e8c37bb6e6dd5085658d658a7a0bdcd20b6a07b1fcfc1c4e9d632", size = 76008 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/16/12b82f791c7f50ddec566873d5bdd245baa1491bac11d15ffb98aecc8f8b/pefile-2024.8.26-py3-none-any.whl", hash = "sha256:76f8b485dcd3b1bb8166f1128d395fa3d87af26360c2358fb75b80019b957c6f", size = 74766 },
+]
+
+[[package]]
 name = "prefixed"
 version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -443,6 +473,43 @@ wheels = [
 ]
 
 [[package]]
+name = "pyinstaller"
+version = "6.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "altgraph" },
+    { name = "macholib", marker = "sys_platform == 'darwin'" },
+    { name = "packaging" },
+    { name = "pefile", marker = "sys_platform == 'win32'" },
+    { name = "pyinstaller-hooks-contrib" },
+    { name = "pywin32-ctypes", marker = "sys_platform == 'win32'" },
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/85/6c14b541f8e9b61eef5eafba3630d68ea0598f6a4cf531c23189765e9bb5/pyinstaller-6.1.0.tar.gz", hash = "sha256:8f3d49c60f3344bf3d4a6d4258bda665dad185ab2b097341d3af2a6387c838ef", size = 4129969 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/64/1f3b1e9d38a535f082cbcd0fa991a067393699877deca8a0c8a0786c8920/pyinstaller-6.1.0-py3-none-macosx_10_13_universal2.whl", hash = "sha256:da78942d31c1911ea4abcd3ca3bd0c062af7f163a5e227fd18a359b61deda4ca", size = 934783 },
+    { url = "https://files.pythonhosted.org/packages/86/4d/6f663620478a16456d157d89ad71ee1847f5c4c3ee38e0e2444e96980376/pyinstaller-6.1.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:f63d2353537bac7bfeeaedbe5ac99f3be35daa290dd1ad1be90768acbf77e3d5", size = 659433 },
+    { url = "https://files.pythonhosted.org/packages/33/34/b6beb6716deb7203bdd2a96e4f29164e31a7733f378b2a0e4caaf9073ee1/pyinstaller-6.1.0-py3-none-manylinux2014_i686.whl", hash = "sha256:6e71d9f6f5a1e0f7523e8ebee1b76bb29538f64d863e3711c2b21033f499e2b9", size = 661589 },
+    { url = "https://files.pythonhosted.org/packages/16/7a/d2f29cab5a3a5bae3762dd177efec1e6f48d7d8ae82e6d16a7da2b1673cd/pyinstaller-6.1.0-py3-none-manylinux2014_ppc64le.whl", hash = "sha256:bebf6f442bbe6343acaec873803510ee1930d026846a018f727da4e0690081f8", size = 666022 },
+    { url = "https://files.pythonhosted.org/packages/b6/2c/8713bf9f8beea815350ba2e6399731f5f7042cc91c8301a77975cfd37ffe/pyinstaller-6.1.0-py3-none-manylinux2014_s390x.whl", hash = "sha256:3c04963637481a3edf1eec64ab4c3fce098908f02fc472c11e73be7eedc08b95", size = 657201 },
+    { url = "https://files.pythonhosted.org/packages/d5/cf/f44320e2c1aa9b76cb81aae80b3d7ac80aefe1bfa973bb05e0ab5fcea0a3/pyinstaller-6.1.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:4368e4eb9999ce32e3280330b3c26f175e0fa7fa13efb4d2dc4ade488ff6d7c2", size = 658050 },
+    { url = "https://files.pythonhosted.org/packages/01/d6/13658a9e6a6f2853e3dead5251674e27bc4af5ac50cdd71ef245344fedf1/pyinstaller-6.1.0-py3-none-musllinux_1_1_aarch64.whl", hash = "sha256:041ab9311d08162356829bf47293a613c44dc9ace28846fb63098889c7383c5d", size = 661472 },
+    { url = "https://files.pythonhosted.org/packages/69/c7/31cc64b2e371a675eb71e4f4371feb805ec92c00f30e8c8fcecffa6a720f/pyinstaller-6.1.0-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:331f050e8f9e923bb6b50454acfc0547fd52092585c61eb5f2fc93de60703f13", size = 658794 },
+    { url = "https://files.pythonhosted.org/packages/27/05/f31e8aa9af646b22e33a502500c6844f25822f919fd4cca1c03ceaf45348/pyinstaller-6.1.0-py3-none-win32.whl", hash = "sha256:9e8b5bbc1bdf554ade1360e62e4959091430c3cc15ebfff3c28c8894fd1f312a", size = 1218641 },
+    { url = "https://files.pythonhosted.org/packages/f3/b9/932c2113ac6cc814ea6433c7882411a97e3e73c5ae45d3f9de0b785999c7/pyinstaller-6.1.0-py3-none-win_amd64.whl", hash = "sha256:f9f5bcaef6122d93c54ee7a9ecb07eab5b81a7ebfb5cb99af2b2a6ff49eff62f", size = 1278952 },
+    { url = "https://files.pythonhosted.org/packages/70/a9/61793fcebf396a94dc1c550e2fecc7fb437814aa01beb8e43d15cd6c9e43/pyinstaller-6.1.0-py3-none-win_arm64.whl", hash = "sha256:dd438afd2abb643f5399c0cb254a11c217c06782cb274a2911dd785f9f67fa9e", size = 1208670 },
+]
+
+[[package]]
+name = "pyinstaller-hooks-contrib"
+version = "2023.11"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/27/8e/f273c4ed8252b47fa6d4ccc28ad770eb720d1c8b051c83ca039dd36693a7/pyinstaller-hooks-contrib-2023.11.tar.gz", hash = "sha256:5dd7a8a054a65c19cdaa381cabcfbe76f44d5f88d18214b0c570a0cd139be77f", size = 107959 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/8b/50a4ddaf1c2abc4e47f6baf409e69de20a2d39863e2704e4d0658f9c39b8/pyinstaller_hooks_contrib-2023.11-py2.py3-none-any.whl", hash = "sha256:f2a75dac2968ec81f92dcd3768906f654fa4204bc496126ae8483e87a5d89602", size = 294172 },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -470,15 +537,28 @@ wheels = [
 ]
 
 [[package]]
+name = "pywin32-ctypes"
+version = "0.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/9f/01a1a99704853cb63f253eea009390c88e7131c67e66a0a02099a8c917cb/pywin32-ctypes-0.2.3.tar.gz", hash = "sha256:d162dc04946d704503b2edc4d55f3dba5c1d539ead017afa00142c38b9885755", size = 29471 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/3d/8161f7711c017e01ac9f008dfddd9410dff3674334c233bde66e7ba65bbf/pywin32_ctypes-0.2.3-py3-none-any.whl", hash = "sha256:8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8", size = 30756 },
+]
+
+[[package]]
 name = "repl-nix-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "libratom" },
+    { name = "pyinstaller" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "libratom", specifier = ">=0.7.1" }]
+requires-dist = [
+    { name = "libratom", specifier = ">=0.7.1" },
+    { name = "pyinstaller", specifier = ">=6.1.0" },
+]
 
 [[package]]
 name = "requests"

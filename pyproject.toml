@@ -5,4 +5,5 @@ description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
     "libratom>=0.7.1",
+    "pyinstaller>=6.1.0",
 ]
