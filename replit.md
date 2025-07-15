@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### July 2025
+- **Critical Bug Fix**: Resolved EmailMessage API conflicts causing 'set_bytes_content() missing maintype' errors
+- **Message Creation Rewrite**: Switched from EmailMessage to traditional MIME classes for better reliability
+- **PyInstaller Integration**: Added complete executable build system with .bat files and .spec configuration
+- **MIT License**: Added proper MIT license to the project
+- **Enhanced Documentation**: Updated README with executable build instructions and comprehensive usage examples
+
 ### December 2024
 - **Library Migration**: Switched from pypff to libratom library for better Python 3 support and maintenance
 - **API Updates**: Updated PST parsing logic to use libratom's message iterator and archive interface
