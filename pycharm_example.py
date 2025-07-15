@@ -15,8 +15,8 @@ def main():
     
     # MODIFY THESE PATHS FOR YOUR FILES
     # Use raw strings (r"") to handle Windows backslashes easily
-    pst_file_path = r"C:\Users\YourName\Documents\Outlook.pst"
-    output_file_path = r"C:\Users\YourName\Documents\converted_emails.mbox"
+    pst_file_path = r"C:\temp\converted email\backup_emails.pst"
+    output_file_path = r"C:\temp\converted email\converted_emails.mbox"
     
     # Alternative way using forward slashes (also works on Windows)
     # pst_file_path = "C:/Users/YourName/Documents/Outlook.pst"
