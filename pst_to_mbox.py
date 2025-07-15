@@ -10,7 +10,6 @@ import sys
 import logging
 import mailbox
 import email
-from email.message import EmailMessage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -131,12 +130,59 @@ class PSTToMboxConverter:
         return attachments
     
     def convert_pst_message_to_email(self, pst_message, folder_path=""):
-        """Convert a PST message to an email.message.EmailMessage object."""
+        """Convert a PST message to an email.message.Message object."""
         try:
-            # Create email message
-            msg = EmailMessage()
+            # Body content
+            body_text = getattr(pst_message, 'plain_text_body', '') or ""
+            body_html = getattr(pst_message, 'html_body', '') or ""
             
-            # Basic headers
+            # Extract attachments
+            attachments = self.extract_attachments(pst_message)
+            
+            # Create appropriate message structure
+            if attachments:
+                # Message with attachments - use multipart/mixed
+                msg = MIMEMultipart('mixed')
+                
+                # Add text content first
+                if body_html and body_text:
+                    # Both text and HTML - create alternative part
+                    alt_part = MIMEMultipart('alternative')
+                    alt_part.attach(MIMEText(body_text, 'plain', 'utf-8'))
+                    alt_part.attach(MIMEText(body_html, 'html', 'utf-8'))
+                    msg.attach(alt_part)
+                elif body_html:
+                    msg.attach(MIMEText(body_html, 'html', 'utf-8'))
+                else:
+                    msg.attach(MIMEText(body_text or "(No content)", 'plain', 'utf-8'))
+                
+                # Add attachments
+                for att in attachments:
+                    if att['data']:
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(att['data'])
+                        encoders.encode_base64(part)
+                        part.add_header(
+                            'Content-Disposition',
+                            f'attachment; filename="{att["filename"]}"'
+                        )
+                        msg.attach(part)
+            
+            elif body_html and body_text:
+                # Both text and HTML - use multipart/alternative
+                msg = MIMEMultipart('alternative')
+                msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+                msg.attach(MIMEText(body_html, 'html', 'utf-8'))
+            
+            elif body_html:
+                # HTML only
+                msg = MIMEText(body_html, 'html', 'utf-8')
+            
+            else:
+                # Plain text only
+                msg = MIMEText(body_text or "(No content)", 'plain', 'utf-8')
+            
+            # Add headers
             subject = getattr(pst_message, 'subject', '') or "(No Subject)"
             msg['Subject'] = subject
             
@@ -179,52 +225,6 @@ class PSTToMboxConverter:
             # Add folder information as custom header
             if folder_path:
                 msg['X-Folder'] = folder_path
-            
-            # Body content
-            body_text = getattr(pst_message, 'plain_text_body', '') or ""
-            body_html = getattr(pst_message, 'html_body', '') or ""
-            
-            # Extract attachments
-            attachments = self.extract_attachments(pst_message)
-            
-            if attachments:
-                # Create multipart message for attachments
-                msg.make_mixed()
-                
-                # Add text content
-                if body_html:
-                    if body_text:
-                        # Both text and HTML
-                        alt_part = MIMEMultipart('alternative')
-                        alt_part.attach(MIMEText(body_text, 'plain', 'utf-8'))
-                        alt_part.attach(MIMEText(body_html, 'html', 'utf-8'))
-                        msg.attach(alt_part)
-                    else:
-                        msg.attach(MIMEText(body_html, 'html', 'utf-8'))
-                else:
-                    msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
-                
-                # Add attachments
-                for att in attachments:
-                    if att['data']:
-                        part = MIMEBase('application', 'octet-stream')
-                        part.set_payload(att['data'])
-                        encoders.encode_base64(part)
-                        part.add_header(
-                            'Content-Disposition',
-                            f'attachment; filename="{att["filename"]}"'
-                        )
-                        msg.attach(part)
-            else:
-                # Simple message without attachments
-                if body_html and body_text:
-                    msg.make_alternative()
-                    msg.add_alternative(body_text, subtype='plain')
-                    msg.add_alternative(body_html, subtype='html')
-                elif body_html:
-                    msg.set_content(body_html, subtype='html')
-                else:
-                    msg.set_content(body_text or "(No content)")
             
             return msg
             

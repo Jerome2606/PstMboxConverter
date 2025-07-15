@@ -1,0 +1,23 @@
+2025-07-15 11:10:54,807 - INFO - Starting PST to mbox conversion...
+2025-07-15 11:10:54,836 - INFO - Successfully opened PST file: C:\temp\converted email\backup_emails.pst
+2025-07-15 11:10:54,837 - INFO - PST file size: 376.86 MB
+2025-07-15 11:10:54,838 - INFO - Processing messages from PST archive...
+2025-07-15 11:10:54,959 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,959 - ERROR - Failed to process message 0: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,962 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,962 - ERROR - Failed to process message 0: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,964 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,964 - ERROR - Failed to process message 0: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,967 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,967 - ERROR - Failed to process message 0: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,968 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,968 - ERROR - Failed to process message 0: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,972 - DEBUG - Found attachment: Facture 5758.pdf (64992 bytes)
+2025-07-15 11:10:54,973 - DEBUG - Found attachment: invoice-25825700.xml (96092 bytes)
+2025-07-15 11:10:54,982 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,982 - ERROR - Failed to process message 1: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,984 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,984 - ERROR - Failed to process message 1: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,987 - ERROR - Failed to convert PST message: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,987 - ERROR - Failed to process message 1: set_bytes_content() missing 1 required positional argument: 'maintype'
+2025-07-15 11:10:54,992 - DEBUG - Found attachment: image001.jpg (122242 bytes)
