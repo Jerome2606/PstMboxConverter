@@ -10,6 +10,7 @@ import sys
 import logging
 import mailbox
 import email
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -189,8 +190,31 @@ class PSTToMboxConverter:
             # Sender information
             sender_name = getattr(pst_message, 'sender_name', '')
             sender_email = getattr(pst_message, 'sender_email_address', '')
+
+            transport_headers = getattr(pst_message, 'transport_headers', '')
+
+            if not sender_email and transport_headers:
+                sender_match = re.search(r'^From:\s*(.+?)\s*<(.+?)>', transport_headers, re.MULTILINE | re.IGNORECASE)
+                if sender_match:
+                    sender_name = sender_match.group(1).strip('"')
+                    sender_email = sender_match.group(2)
+
             if sender_email:
                 msg['From'] = self.format_email_address(sender_email, sender_name)
+                # Set mbox unix from line for correct sender display
+                delivery_time = getattr(pst_message, 'delivery_time', None)
+                if not delivery_time and transport_headers:
+                    date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
+                    if date_match:
+                        try:
+                            delivery_time = email.utils.parsedate_to_datetime(date_match.group(1).strip())
+                        except Exception:
+                            delivery_time = None
+                if delivery_time:
+                    unix_date = delivery_time.strftime('%a %b %d %H:%M:%S %Y')
+                else:
+                    unix_date = datetime.now().strftime('%a %b %d %H:%M:%S %Y')
+                msg.set_unixfrom(f'From {sender_email} {unix_date}')
             
             # Recipients
             recipients = []
@@ -206,15 +230,23 @@ class PSTToMboxConverter:
             
             # Date
             delivery_time = getattr(pst_message, 'delivery_time', None)
+            if not delivery_time and transport_headers:
+                date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
+                if date_match:
+                    try:
+                        delivery_time = email.utils.parsedate_to_datetime(date_match.group(1).strip())
+                    except Exception:
+                        delivery_time = None
+
             if delivery_time:
                 try:
                     msg['Date'] = delivery_time.strftime('%a, %d %b %Y %H:%M:%S %z')
-                except:
-                    # Fallback to current time if date formatting fails
-                    msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
+                except Exception:
+                    msg['Date'] = delivery_time.isoformat()
+            else:
+                msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
             
             # Message ID
-            transport_headers = getattr(pst_message, 'transport_headers', '')
             if transport_headers and 'Message-ID:' in transport_headers:
                 try:
                     msg_id = transport_headers.split('Message-ID:')[1].split('\n')[0].strip()
