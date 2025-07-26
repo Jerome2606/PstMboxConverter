@@ -10,6 +10,7 @@ import sys
 import logging
 import mailbox
 import email
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -50,7 +51,7 @@ class PSTToMboxConverter:
         self.processed_folders = 0
         self.total_size = 0
 
-        self.result_collector_list = []
+        #self.result_collector_list = []
         
         # Setup logging
         log_level = logging.DEBUG if verbose else logging.INFO
@@ -237,22 +238,37 @@ class PSTToMboxConverter:
 
             msg['Subject'] = subject
             
+            # start of merge-try
             hih = HeaderItemsHelper(pst_message.transport_headers)          
             sender_name, sender_email, delivery_time = self.extract_from_and_time_values(hih)
             
-            item_from = hih.get_header_item('From')
-            
             if (sender_email == "Unknown Email"):
-
-                item_from = hih.get_header_item('From')
+                item_from = hih.get_header_item('From') #get FROM item to check, what went wrong
                 #print(f'??????????????? From value: >>>{item_from[1] if item_from[0] else "Unknown From"}<<<')
-                self.result_collector_list.append(f'--------------;>>>{item_from[1] if item_from[0] else "Unknown From"}<<<;;')
+                #self.result_collector_list.append(f'--------------;>>>{item_from[1] if item_from[0] else "Unknown From"}<<<;;')
                 if item_from[0]:
                     self.logger.info(f"Couldn't deal with below \"FROM:\" item data in email transport header:\n{item_from[1]}")
                 else:
                     self.logger.info(f"Couldn't find \"FROM:\" item in email transport header!")                    
             else:
                 msg['From'] = self.format_email_address(sender_email, sender_name)
+                # Set mbox unix from line for correct sender display
+                '''
+                delivery_time = getattr(pst_message, 'delivery_time', None)
+                #delivery_time already set by function self.extract_from_and_time_values
+                '''
+                if not delivery_time and transport_headers:
+                    date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
+                    if date_match:
+                        try:
+                            delivery_time = email.utils.parsedate_to_datetime(date_match.group(1).strip())
+                        except Exception:
+                            delivery_time = None
+                if delivery_time:
+                    unix_date = delivery_time.strftime('%a %b %d %H:%M:%S %Y')
+                else:
+                    unix_date = datetime.now().strftime('%a %b %d %H:%M:%S %Y')
+                msg.set_unixfrom(f'From {sender_email} {unix_date}')
             
             # Recipients
             recipients = []
@@ -266,10 +282,29 @@ class PSTToMboxConverter:
             if recipients:
                 msg['To'] = ', '.join(recipients)
             
+
             msg['Date'] = delivery_time
+            ''' date handling seems to be done above already
+            # Date
+            delivery_time = getattr(pst_message, 'delivery_time', None)
+            if not delivery_time and transport_headers:
+                date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
+                if date_match:
+                    try:
+                        delivery_time = email.utils.parsedate_to_datetime(date_match.group(1).strip())
+                    except Exception:
+                        delivery_time = None
+
+            if delivery_time:
+                try:
+                    msg['Date'] = delivery_time.strftime('%a, %d %b %Y %H:%M:%S %z')
+                except Exception:
+                    msg['Date'] = delivery_time.isoformat()
+            else:
+                msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
+            '''
 
             # Message ID
-            transport_headers = getattr(pst_message, 'transport_headers', '')
             if transport_headers and 'Message-ID:' in transport_headers:
                 try:
                     msg_id = transport_headers.split('Message-ID:')[1].split('\n')[0].strip()
@@ -424,10 +459,13 @@ Examples:
     
     try:
         success = converter.convert()
+        ''' required during development only
+        # adjust path accordingly
         with open('D:\Python\Python310\gitProjects\PstMboxConverter\\results_file.txt', mode="w", encoding="utf-8") as f:
             for line in converter.result_collector_list:
                 #print(line)
                 f.write(f"{line}\n")
+        '''
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\nConversion interrupted by user")
