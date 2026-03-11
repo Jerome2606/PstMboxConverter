@@ -1,32 +1,56 @@
 # PST to mbox Converter
 
-A Python command-line tool for converting Outlook PST files to mbox format for webmail import.
+A Python command-line tool for converting Outlook PST files to mbox format for webmail import. Includes powerful filters, multiple output formats, attachment extraction, and more.
 
 ## Features
 
+### Core
 - ✅ Reads and parses .PST files exported from Outlook
 - ✅ Converts PST email data to standard .mbox format
 - ✅ Preserves email metadata (sender, recipient, date, subject)
 - ✅ Preserves email body content (both text and HTML)
+- ✅ Preserves CC and BCC recipients
 - ✅ Handles attachments properly
 - ✅ Maintains folder structure information
-- ✅ Provides progress feedback during conversion
 - ✅ Robust error handling for corrupted or invalid files
 - ✅ Efficient memory usage for large PST files
-- ✅ Cross-platform compatibility
+- ✅ Cross-platform compatibility (Windows, macOS, Linux)
+
+### Filters
+- 📅 **Date range** — Export only emails between specific dates
+- 📁 **Folder filter** — Export only specific folders (e.g. Inbox, Sent)
+- 👤 **Sender filter** — Export only emails from a specific person
+- 👥 **Recipient filter** — Export only emails sent to a specific person
+- 🔍 **Keyword search** — Export only emails containing a word in subject or body
+- 🔄 **Duplicate detection** — Skip duplicate emails automatically
+
+### Output Formats
+- 📦 **mbox** — Standard single-file format (default)
+- 📄 **EML** — Individual `.eml` file per email, organized by folder
+- 📂 **Split by folder** — One `.mbox` file per PST folder
+- 📊 **Metadata CSV** — Export email metadata to a spreadsheet
+- 📋 **Metadata JSON** — Export email metadata as JSON
+
+### Extra Features
+- 📎 **Extract attachments** — Save all attachments to a folder on disk
+- 🔍 **Dry run** — Preview what would be converted without writing files
+- 📈 **Stats only** — View PST statistics (folders, email counts, size) without converting
+- 📊 **Progress bar** — Visual progress bar during conversion (via `tqdm`)
+- 📝 **Log to file** — Save conversion log to a file
 
 ## Requirements
 
 - Python 3.6 or higher
 - libratom library (for PST file parsing)
+- tqdm (optional, for progress bar)
 
 ## Installation
 
 ### Option 1: Python Script (Requires Python)
 
-1. Install the required Python library:
+1. Install the required Python libraries:
 ```bash
-pip install libratom
+pip install -r requirements.txt
 ```
 
 2. Download the `pst_to_mbox.py` script
@@ -39,7 +63,7 @@ pip install libratom
 
 **Manual build:**
 ```bash
-pip install pyinstaller libratom
+pip install pyinstaller libratom tqdm
 pyinstaller pst-to-mbox.spec
 ```
 
@@ -47,42 +71,123 @@ Find your executable in the `dist` folder.
 
 ## Usage
 
-### Python Script
+### Basic Conversion
 ```bash
-# Basic usage
+# Convert entire PST to mbox
 python pst_to_mbox.py input.pst output.mbox
 
 # With verbose output
 python pst_to_mbox.py -v input.pst output.mbox
 ```
 
-### Standalone Executable
+### Filtering Emails
+
 ```bash
-# Basic usage
+# Only emails from 2023 onward
+python pst_to_mbox.py input.pst output.mbox --from-date 2023-01-01
+
+# Only emails from January to March 2024
+python pst_to_mbox.py input.pst output.mbox --from-date 2024-01-01 --to-date 2024-03-31
+
+# Only emails from the Inbox folder
+python pst_to_mbox.py input.pst output.mbox --folder Inbox
+
+# Only emails from a specific sender
+python pst_to_mbox.py input.pst output.mbox --sender boss@company.com
+
+# Only emails sent to a specific person
+python pst_to_mbox.py input.pst output.mbox --to-filter maria@company.com
+
+# Only emails containing a keyword in subject or body
+python pst_to_mbox.py input.pst output.mbox --search "quarterly report"
+
+# Combine multiple filters
+python pst_to_mbox.py input.pst output.mbox --folder Inbox --from-date 2024-01-01 --search "project"
+
+# Skip duplicates
+python pst_to_mbox.py input.pst output.mbox --skip-duplicates
+```
+
+### Alternative Output Formats
+
+```bash
+# Export as individual .eml files (organized in folders)
+python pst_to_mbox.py input.pst output_dir/ --format eml
+
+# Create one .mbox per PST folder
+python pst_to_mbox.py input.pst output_dir/ --split-by-folder
+
+# Export metadata to CSV (for spreadsheet analysis)
+python pst_to_mbox.py input.pst output.mbox --metadata-csv report.csv
+
+# Export metadata to JSON
+python pst_to_mbox.py input.pst output.mbox --metadata-json report.json
+```
+
+### Attachments
+
+```bash
+# Extract all attachments to a directory
+python pst_to_mbox.py input.pst output.mbox --extract-attachments ./attachments
+```
+
+### Inspection Without Converting
+
+```bash
+# View PST statistics (folder names, email counts, size)
+python pst_to_mbox.py --stats-only input.pst
+
+# Dry run — see what would be converted without writing any files
+python pst_to_mbox.py --dry-run input.pst output.mbox
+
+# Dry run with filters to check what matches
+python pst_to_mbox.py --dry-run input.pst output.mbox --sender boss@company.com --from-date 2024-01-01
+```
+
+### Logging
+
+```bash
+# Save log to a file
+python pst_to_mbox.py input.pst output.mbox --log-file conversion.log
+```
+
+### Standalone Executable (Windows)
+```bash
 pst-to-mbox.exe input.pst output.mbox
-
-# With verbose output
-pst-to-mbox.exe -v input.pst output.mbox
+pst-to-mbox.exe -v input.pst output.mbox --folder Inbox --extract-attachments ./adj
 ```
 
-### Examples
-```bash
-# Python version
-python pst_to_mbox.py "MyEmails.pst" "converted_emails.mbox"
-python pst_to_mbox.py --verbose "/path/to/outlook.pst" "/path/to/emails.mbox"
+## All Options
 
-# Executable version (Windows)
-pst-to-mbox.exe "C:\Users\Name\Documents\Outlook.pst" "emails.mbox"
-pst-to-mbox.exe -v "C:\temp\backup.pst" "C:\temp\converted.mbox"
-```
+| Option | Description |
+|---|---|
+| `pst_file` | Path to the input PST file |
+| `output_file` | Path to the output file or directory |
+| `-v, --verbose` | Enable verbose output |
+| `--from-date YYYY-MM-DD` | Only emails from this date onward |
+| `--to-date YYYY-MM-DD` | Only emails up to this date |
+| `--folder NAME` | Only emails from folders matching NAME |
+| `--sender TEXT` | Only emails where sender matches TEXT |
+| `--to-filter TEXT` | Only emails where any recipient matches TEXT |
+| `--search KEYWORD` | Only emails containing KEYWORD in subject or body |
+| `--skip-duplicates` | Skip duplicate emails |
+| `--format {mbox,eml}` | Output format (default: mbox) |
+| `--split-by-folder` | Create one .mbox per PST folder |
+| `--metadata-csv FILE` | Export metadata to CSV |
+| `--metadata-json FILE` | Export metadata to JSON |
+| `--extract-attachments DIR` | Save attachments to a directory |
+| `--dry-run` | Preview without writing files |
+| `--stats-only` | Show PST stats without converting |
+| `--log-file FILE` | Write log to a file |
 
 ## What it does
 
-1. **Opens your PST file** - The tool reads the PST file you exported from Outlook
-2. **Extracts all emails** - It goes through every email in all folders
-3. **Preserves important data** - Keeps sender, recipient, date, subject, and message content
-4. **Handles attachments** - Properly includes file attachments in the conversion
-5. **Creates mbox file** - Generates a standard mbox file that most email clients can import
+1. **Opens your PST file** — The tool reads the PST file you exported from Outlook
+2. **Applies your filters** — Only processes emails matching your criteria (date, folder, sender, keywords)
+3. **Extracts all matching emails** — Goes through every email in all (or selected) folders
+4. **Preserves important data** — Keeps sender, To, CC, BCC, date, subject, and full message content
+5. **Handles attachments** — Includes attachments in converted emails and optionally saves them to disk
+6. **Creates output** — Generates mbox, EML files, or metadata exports as requested
 
 ## Importing to Webmail
 
@@ -97,10 +202,10 @@ Once you have the `.mbox` file, you can import it into various email services:
 
 ### Common Issues
 
-1. **"libratom library is required"** - Install with: `pip install libratom`
-2. **"PST file not found"** - Check the file path and make sure the file exists
-3. **"Permission denied"** - Make sure you have read access to the PST file
-4. **Large files taking time** - This is normal; PST files can be several GB
+1. **"libratom library is required"** — Install with: `pip install libratom`
+2. **"PST file not found"** — Check the file path and make sure the file exists
+3. **"Permission denied"** — Make sure you have read access to the PST file
+4. **Large files taking time** — This is normal; PST files can be several GB. Use `--stats-only` first to check the size
 
 ### Getting Help
 
@@ -112,10 +217,10 @@ python pst_to_mbox.py --help
 ## Technical Details
 
 - **Input Format**: Microsoft Outlook PST files
-- **Output Format**: Standard mbox format (RFC 4155)
+- **Output Format**: mbox (RFC 4155), EML, CSV, JSON
 - **Memory Efficient**: Processes large files without loading everything into memory
 - **Cross-Platform**: Works on Windows, macOS, and Linux
-- **Progress Tracking**: Shows conversion progress for large files
+- **Progress Tracking**: Visual progress bar for large conversions
 
 ## Building Executable
 
