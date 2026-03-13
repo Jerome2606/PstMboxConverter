@@ -138,6 +138,11 @@ pst_file = "C:/Users/John/Documents/Outlook.pst"
    - Use verbose mode (`-v`) to see progress
    - The tool will show progress every 100 emails
 
+6. **"module 'pkgutil' has no attribute 'ImpImporter'" during installation**
+   - This happens with older versions of the packaging tools on Python 3.12+
+   - Run `python -m pip install --upgrade pip setuptools wheel`
+   - Re-run the build script afterwards
+
 ### Getting Your PST File from Outlook:
 1. Open Outlook
 2. Go to File → Open & Export → Import/Export

@@ -52,6 +52,9 @@ class PSTToMboxConverter:
         self.total_size = 0
 
         #self.result_collector_list = []
+        self.attachments_found = 0
+        self.attachments_extracted = 0
+        self.attachment_bytes = 0
         
         # Setup logging
         log_level = logging.DEBUG if verbose else logging.INFO
@@ -118,23 +121,59 @@ class PSTToMboxConverter:
     def extract_attachments(self, pst_message):
         """Extract attachment information from PST message."""
         attachments = []
-        
+
         try:
             if hasattr(pst_message, 'number_of_attachments'):
                 attachment_count = pst_message.number_of_attachments
+                if attachment_count > 0:
+                    self.logger.debug(f"Message has {attachment_count} attachment(s)")
+                    self.attachments_found += attachment_count
                 for i in range(attachment_count):
-                    attachment = pst_message.get_attachment(i)
-                    if attachment:
-                        att_info = {
-                            'filename': getattr(attachment, 'name', f"attachment_{i}") or f"attachment_{i}",
-                            'size': getattr(attachment, 'size', 0),
-                            'data': getattr(attachment, 'data', None)
-                        }
-                        attachments.append(att_info)
-                        self.logger.debug(f"Found attachment: {att_info['filename']} ({att_info['size']} bytes)")
+                    try:
+                        attachment = pst_message.get_attachment(i)
+                        if attachment:
+                            filename = self.safe_get_attr(attachment, 'name', f"attachment_{i}") or f"attachment_{i}"
+                            size = self.safe_get_attr(attachment, 'size', 0) or 0
+
+                            # Try multiple methods to get attachment data
+                            data = None
+
+                            # Method 1: Try read_buffer if available (libpff native method)
+                            if data is None and hasattr(attachment, 'read_buffer') and size > 0:
+                                try:
+                                    data = attachment.read_buffer(size)
+                                except Exception as e:
+                                    self.logger.debug(f"read_buffer failed for '{filename}': {e}")
+
+                            # Method 2: Try get_data if available
+                            if data is None and hasattr(attachment, 'get_data'):
+                                try:
+                                    data = attachment.get_data()
+                                except Exception as e:
+                                    self.logger.debug(f"get_data failed for '{filename}': {e}")
+
+                            # Method 3: Try data property
+                            if data is None:
+                                data = self.safe_get_attr(attachment, 'data', None)
+
+                            actual_size = len(data) if data else 0
+                            att_info = {
+                                'filename': filename,
+                                'size': size,
+                                'data': data
+                            }
+                            attachments.append(att_info)
+                            if actual_size == 0 and size > 0:
+                                self.logger.warning(f"Attachment '{filename}' reported size {size} but data is empty")
+                            else:
+                                self.attachments_extracted += 1
+                                self.attachment_bytes += actual_size
+                                self.logger.debug(f"Found attachment: {filename} ({actual_size} bytes)")
+                    except (SystemError, ValueError, UnicodeDecodeError, OverflowError) as e:
+                        self.logger.warning(f"Failed to extract attachment {i}: {e}")
         except Exception as e:
             self.logger.warning(f"Failed to extract attachments: {e}")
-        
+
         return attachments
     #-----------------------------------------------------------------------------------------------------------------------------------
     
@@ -180,12 +219,21 @@ class PSTToMboxConverter:
         return return_value
     
         
+    def safe_get_attr(self, obj, attr, default=''):
+        """Safely get an attribute, catching Unicode decode errors from corrupted PST data."""
+        try:
+            value = getattr(obj, attr, default)
+            return value if value is not None else default
+        except (SystemError, ValueError, UnicodeDecodeError, OverflowError) as e:
+            self.logger.debug(f"Failed to read attribute '{attr}': {e}")
+            return default
+
     def convert_pst_message_to_email(self, pst_message, folder_path=""):
         """Convert a PST message to an email.message.Message object."""
         try:
-            # Body content
-            body_text = getattr(pst_message, 'plain_text_body', '') or ""
-            body_html = getattr(pst_message, 'html_body', '') or ""
+            # Body content - use safe accessor to handle corrupted strings
+            body_text = self.safe_get_attr(pst_message, 'plain_text_body', '') or ""
+            body_html = self.safe_get_attr(pst_message, 'html_body', '') or ""
             
             # Extract attachments
             attachments = self.extract_attachments(pst_message)
@@ -272,12 +320,15 @@ class PSTToMboxConverter:
             
             # Recipients
             recipients = []
-            if hasattr(pst_message, 'recipients') and pst_message.recipients:
-                for recipient in pst_message.recipients:
-                    recipient_email = getattr(recipient, 'email_address', '')
-                    recipient_name = getattr(recipient, 'name', '')
-                    if recipient_email:
-                        recipients.append(self.format_email_address(recipient_email, recipient_name))
+            try:
+                if hasattr(pst_message, 'recipients') and pst_message.recipients:
+                    for recipient in pst_message.recipients:
+                        recipient_email = self.safe_get_attr(recipient, 'email_address', '')
+                        recipient_name = self.safe_get_attr(recipient, 'name', '')
+                        if recipient_email:
+                            recipients.append(self.format_email_address(recipient_email, recipient_name))
+            except (SystemError, ValueError, UnicodeDecodeError, OverflowError) as e:
+                self.logger.debug(f"Failed to read recipients: {e}")
             
             if recipients:
                 msg['To'] = ', '.join(recipients)
@@ -286,7 +337,7 @@ class PSTToMboxConverter:
             msg['Date'] = delivery_time
             ''' date handling seems to be done above already
             # Date
-            delivery_time = getattr(pst_message, 'delivery_time', None)
+            delivery_time = self.safe_get_attr(pst_message, 'delivery_time', None)
             if not delivery_time and transport_headers:
                 date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
                 if date_match:
@@ -343,8 +394,11 @@ class PSTToMboxConverter:
                 try:
                     # Get folder path if available
                     folder_path = "Unknown"
-                    if hasattr(pst_message, 'folder') and pst_message.folder:
-                        folder_path = getattr(pst_message.folder, 'name', 'Unknown')
+                    try:
+                        if hasattr(pst_message, 'folder') and pst_message.folder:
+                            folder_path = self.safe_get_attr(pst_message.folder, 'name', 'Unknown')
+                    except (SystemError, ValueError, UnicodeDecodeError, OverflowError):
+                        pass
                     
                     email_msg = self.convert_pst_message_to_email(pst_message, folder_path)
                     mbox_file.add(email_msg)
@@ -404,6 +458,8 @@ class PSTToMboxConverter:
             self.logger.info(f"Output file: {self.output_file}")
             self.logger.info(f"Processed emails: {self.processed_emails}")
             self.logger.info(f"Failed emails: {self.failed_emails}")
+            self.logger.info(f"Attachments found: {self.attachments_found}")
+            self.logger.info(f"Attachments extracted: {self.attachments_extracted} ({self.attachment_bytes / (1024*1024):.2f} MB)")
             self.logger.info(f"Output file size: {output_size / (1024*1024):.2f} MB")
             self.logger.info(f"Processing time: {duration:.2f} seconds")
             

@@ -15,6 +15,28 @@ def build_executable():
     print("=" * 45)
     print()
     
+    # Ensure build tooling is up to date.  Older versions of setuptools ship a
+    # pkg_resources module that still references ``pkgutil.ImpImporter`` which
+    # was removed in Python 3.12+.  When PyInstaller or libratom are installed
+    # in such an environment the import error bubbles up from pip's build
+    # backend, preventing the executable from being created.  Upgrading the
+    # standard build trio here keeps the user on a compatible version before we
+    # attempt to import the project dependencies.
+    print("Ensuring packaging tools are up to date...")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+            "setuptools",
+            "wheel",
+        ],
+        check=True,
+    )
+
     # Check if PyInstaller is available
     try:
         import PyInstaller
