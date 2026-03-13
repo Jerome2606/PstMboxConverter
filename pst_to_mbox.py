@@ -20,6 +20,11 @@ import time
 from datetime import datetime
 import base64
 
+import re
+from email.header import decode_header #added rjs
+
+from header_items_helper import HeaderItemsHelper
+
 try:
     from libratom.lib.pff import PffArchive
 except ImportError:
@@ -45,6 +50,8 @@ class PSTToMboxConverter:
         self.failed_emails = 0
         self.processed_folders = 0
         self.total_size = 0
+
+        #self.result_collector_list = []
         self.attachments_found = 0
         self.attachments_extracted = 0
         self.attachment_bytes = 0
@@ -168,7 +175,50 @@ class PSTToMboxConverter:
             self.logger.warning(f"Failed to extract attachments: {e}")
 
         return attachments
+    #-----------------------------------------------------------------------------------------------------------------------------------
     
+    def extract_from_and_time_values(self, header_i_h):        
+        """trying to xtract sender name, email address and timestamp from transport header."""
+        
+        from_item_exists, from_item = header_i_h.get_header_item('From')
+        date_item_exists, date_item = header_i_h.get_header_item('Date')
+        
+        sender_name = "Unknown Sender"
+        sender_email = "Unknown Email"
+        if from_item_exists:
+            sender_re = re.search(r"(.+?)\n? <(.+?)>", from_item)
+            if sender_re:
+                sender_name = sender_re.group(1).strip('"')
+                sender_email = sender_re.group(2)
+        if sender_email == "Unknown Email":
+            sender_re = re.search(r"(\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)", from_item)
+            if sender_re:
+                sender_email = sender_re.group(1)
+                if sender_name == "Unknown Sender":
+                    sender_name = sender_email
+
+        # Extract the timestamp from the transport header
+        timestamp ='Mon, 01 Jan 1900 00:00:00 GMT' # Default timestamp if not found
+        if date_item_exists:
+            timestamp = date_item
+
+        return sender_name, sender_email, timestamp   
+    
+    def process_from_info(self, item_from):
+        """Process 'From' header item to extract name and email."""
+        print(item_from)
+        left_pos = item_from.rfind('<')
+        at_pos = item_from.rfind('@')
+        right_pos = item_from.rfind('>')
+        return_value = (None, None )
+        if left_pos != -1 and at_pos != -1 and right_pos != -1:
+            name = item_from[:left_pos].strip()
+            email = item_from[left_pos + 1:right_pos].strip()
+            return_value = (name, email)  
+        print(f"Processed From info: {return_value}")
+        return return_value
+    
+        
     def safe_get_attr(self, obj, attr, default=''):
         """Safely get an attribute, catching Unicode decode errors from corrupted PST data."""
         try:
@@ -232,25 +282,29 @@ class PSTToMboxConverter:
                 msg = MIMEText(body_text or "(No content)", 'plain', 'utf-8')
             
             # Add headers
-            subject = self.safe_get_attr(pst_message, 'subject', '') or "(No Subject)"
+            subject = getattr(pst_message, 'subject', '') or "(No Subject)"
+
             msg['Subject'] = subject
-
-            # Sender information
-            sender_name = self.safe_get_attr(pst_message, 'sender_name', '')
-            sender_email = self.safe_get_attr(pst_message, 'sender_email_address', '')
-
-            transport_headers = self.safe_get_attr(pst_message, 'transport_headers', '')
-
-            if not sender_email and transport_headers:
-                sender_match = re.search(r'^From:\s*(.+?)\s*<(.+?)>', transport_headers, re.MULTILINE | re.IGNORECASE)
-                if sender_match:
-                    sender_name = sender_match.group(1).strip('"')
-                    sender_email = sender_match.group(2)
-
-            if sender_email:
+            
+            # start of merge-try
+            hih = HeaderItemsHelper(pst_message.transport_headers)          
+            sender_name, sender_email, delivery_time = self.extract_from_and_time_values(hih)
+            
+            if (sender_email == "Unknown Email"):
+                item_from = hih.get_header_item('From') #get FROM item to check, what went wrong
+                #print(f'??????????????? From value: >>>{item_from[1] if item_from[0] else "Unknown From"}<<<')
+                #self.result_collector_list.append(f'--------------;>>>{item_from[1] if item_from[0] else "Unknown From"}<<<;;')
+                if item_from[0]:
+                    self.logger.info(f"Couldn't deal with below \"FROM:\" item data in email transport header:\n{item_from[1]}")
+                else:
+                    self.logger.info(f"Couldn't find \"FROM:\" item in email transport header!")                    
+            else:
                 msg['From'] = self.format_email_address(sender_email, sender_name)
                 # Set mbox unix from line for correct sender display
-                delivery_time = self.safe_get_attr(pst_message, 'delivery_time', None)
+                '''
+                delivery_time = getattr(pst_message, 'delivery_time', None)
+                #delivery_time already set by function self.extract_from_and_time_values
+                '''
                 if not delivery_time and transport_headers:
                     date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
                     if date_match:
@@ -279,6 +333,9 @@ class PSTToMboxConverter:
             if recipients:
                 msg['To'] = ', '.join(recipients)
             
+
+            msg['Date'] = delivery_time
+            ''' date handling seems to be done above already
             # Date
             delivery_time = self.safe_get_attr(pst_message, 'delivery_time', None)
             if not delivery_time and transport_headers:
@@ -296,7 +353,8 @@ class PSTToMboxConverter:
                     msg['Date'] = delivery_time.isoformat()
             else:
                 msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
-            
+            '''
+
             # Message ID
             if transport_headers and 'Message-ID:' in transport_headers:
                 try:
@@ -323,6 +381,16 @@ class PSTToMboxConverter:
             # Use libratom's messages() generator to iterate through all messages
             message_count = 0
             for pst_message in pst_archive.messages():
+                '''
+                if message_count == 0:
+                    print(f'Object attributes: {dir(pst_message)}')
+                    header_items = self.header_to_dict(pst_message.transport_headers)
+                    for k in header_items.keys():
+                        print(f"Key: {k} --- Value: {header_items[k]}")
+                    print(f'transport_headers: {pst_message.transport_headers} ')
+
+                '''
+
                 try:
                     # Get folder path if available
                     folder_path = "Unknown"
@@ -447,6 +515,13 @@ Examples:
     
     try:
         success = converter.convert()
+        ''' required during development only
+        # adjust path accordingly
+        with open('D:\Python\Python310\gitProjects\PstMboxConverter\\results_file.txt', mode="w", encoding="utf-8") as f:
+            for line in converter.result_collector_list:
+                #print(line)
+                f.write(f"{line}\n")
+        '''
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\nConversion interrupted by user")
