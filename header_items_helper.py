@@ -11,13 +11,15 @@ class HeaderItemsHelper:
         """Convert headers string to a dictionary."""
         header_dict = {}
         current_header_item = ''
+        if not headers:
+            return
         for h_line in headers.splitlines():
             if len(h_line) == len(h_line.lstrip()):
                 if ':' in h_line:
                     key, value = h_line.split(':', 1)
                     self.__items_dictionary[key.strip()] = value.strip()
                     current_header_item = key.strip()
-            else:
+            elif current_header_item:
                 self.__items_dictionary[current_header_item] += h_line #.strip()[1:]  # Skip leading space/tab character
 
     
