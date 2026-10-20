@@ -35,7 +35,7 @@ except ImportError:
 class PSTToMboxConverter:
     """Convert PST files to mbox format with progress tracking and error handling."""
     
-    def __init__(self, pst_file, output_file, verbose=False):
+    def __init__(self, pst_file, output_file, verbose=False, split_folders=False):
         """
         Initialize the converter.
         
@@ -43,10 +43,13 @@ class PSTToMboxConverter:
             pst_file (str): Path to the input PST file
             output_file (str): Path to the output mbox file
             verbose (bool): Enable verbose logging
+            split_folders (bool): Write one mbox per PST folder into the output directory
         """
         self.pst_file = Path(pst_file)
         self.output_file = Path(output_file)
         self.verbose = verbose
+        self.split_folders = split_folders
+        self.mboxes = {}
         self.processed_emails = 0
         self.failed_emails = 0
         self.processed_folders = 0
@@ -84,9 +87,15 @@ class PSTToMboxConverter:
         # Check if output directory exists, create if not
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Check if output file already exists
-        if self.output_file.exists():
-            response = input(f"Output file {self.output_file} already exists. Overwrite? (y/N): ")
+        # Check if output file (or, when splitting, a non-empty output directory) already exists
+        if self.split_folders:
+            if self.output_file.is_file():
+                raise ValueError(f"Output path is a file, but --split-folders needs a directory: {self.output_file}")
+            exists = self.output_file.is_dir() and any(self.output_file.iterdir())
+        else:
+            exists = self.output_file.exists()
+        if exists:
+            response = input(f"Output {self.output_file} already exists. Overwrite? (y/N): ")
             if response.lower() not in ['y', 'yes']:
                 raise ValueError("Operation cancelled by user")
     
@@ -416,7 +425,37 @@ class PSTToMboxConverter:
             except OSError as e:
                 self.logger.debug(f"Failed to read folder '{folder_path}': {e}")
 
-    def process_messages(self, pst_archive, mbox_file):
+    @staticmethod
+    def safe_path_part(name):
+        """Make a PST folder name usable as a file or directory name."""
+        cleaned = re.sub(r'[<>:"\\|?*\x00-\x1f/]', '_', name).strip().rstrip('.')
+        return cleaned or '_'
+
+    def get_mbox(self, folder_path):
+        """Return the mbox that messages of this folder are written to, opening it on first use."""
+        key = folder_path if self.split_folders else None
+        if key not in self.mboxes:
+            if key is None:
+                path = self.output_file
+            else:
+                parts = [self.safe_path_part(part) for part in folder_path.split('/')]
+                path = self.output_file.joinpath(*parts[:-1], parts[-1] + '.mbox')
+                path.parent.mkdir(parents=True, exist_ok=True)
+            mbox_file = mailbox.mbox(str(path))
+            mbox_file.lock()
+            self.mboxes[key] = mbox_file
+        return self.mboxes[key]
+
+    def close_mboxes(self):
+        """Flush and close every open mbox."""
+        for mbox_file in self.mboxes.values():
+            try:
+                mbox_file.flush()
+            finally:
+                mbox_file.unlock()
+                mbox_file.close()
+
+    def process_messages(self, pst_archive):
         """Process all messages in the PST archive."""
         try:
             self.logger.info("Processing messages from PST archive...")
@@ -432,7 +471,7 @@ class PSTToMboxConverter:
                         continue
 
                     email_msg = self.convert_pst_message_to_email(pst_message, folder_path)
-                    mbox_file.add(email_msg)
+                    self.get_mbox(folder_path).add(email_msg)
                     self.processed_emails += 1
                     message_count += 1
                     
@@ -461,32 +500,33 @@ class PSTToMboxConverter:
             # Open PST file
             pst_archive = self.open_pst_file()
             
-            # Create mbox file
-            mbox_file = mailbox.mbox(str(self.output_file))
-            mbox_file.lock()
-            
             try:
+                # Single-file mode always creates the output file, even for an empty PST
+                if not self.split_folders:
+                    self.get_mbox(None)
+
                 # Process all messages
-                self.process_messages(pst_archive, mbox_file)
-                
-                # Flush and close mbox file
-                mbox_file.flush()
+                self.process_messages(pst_archive)
                 
             finally:
-                mbox_file.unlock()
-                mbox_file.close()
+                self.close_mboxes()
             
             # Calculate statistics
             end_time = time.time()
             duration = end_time - start_time
-            output_size = self.output_file.stat().st_size if self.output_file.exists() else 0
+            if self.split_folders:
+                output_size = sum(f.stat().st_size for f in self.output_file.rglob('*.mbox'))
+            else:
+                output_size = self.output_file.stat().st_size if self.output_file.exists() else 0
             
             # Print final statistics
             self.logger.info("\n" + "="*50)
             self.logger.info("CONVERSION COMPLETED SUCCESSFULLY")
             self.logger.info("="*50)
             self.logger.info(f"Input file: {self.pst_file}")
-            self.logger.info(f"Output file: {self.output_file}")
+            self.logger.info(f"Output {'directory' if self.split_folders else 'file'}: {self.output_file}")
+            if self.split_folders:
+                self.logger.info(f"Folder mbox files: {len(self.mboxes)}")
             self.logger.info(f"Processed emails: {self.processed_emails}")
             self.logger.info(f"Failed emails: {self.failed_emails}")
             self.logger.info(f"Skipped non-mail items: {self.skipped_items}")
@@ -514,6 +554,7 @@ def main():
 Examples:
   %(prog)s input.pst output.mbox
   %(prog)s -v /path/to/outlook.pst /path/to/emails.mbox
+  %(prog)s --split-folders input.pst output_dir
   %(prog)s --verbose "C:\\Users\\Name\\Documents\\Outlook.pst" "emails.mbox"
         """
     )
@@ -525,13 +566,19 @@ Examples:
     
     parser.add_argument(
         'output_file',
-        help='Path to the output mbox file'
+        help='Path to the output mbox file (or directory when --split-folders is used)'
     )
     
     parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='Enable verbose output'
+    )
+    
+    parser.add_argument(
+        '--split-folders',
+        action='store_true',
+        help='Write one mbox file per PST folder into the output directory instead of a single mbox'
     )
     
     parser.add_argument(
@@ -543,7 +590,7 @@ Examples:
     args = parser.parse_args()
     
     # Create converter and run conversion
-    converter = PSTToMboxConverter(args.pst_file, args.output_file, args.verbose)
+    converter = PSTToMboxConverter(args.pst_file, args.output_file, args.verbose, args.split_folders)
     
     try:
         success = converter.convert()
