@@ -54,7 +54,14 @@ python pst_to_mbox.py input.pst output.mbox
 
 # With verbose output
 python pst_to_mbox.py -v input.pst output.mbox
+
+# One mbox per PST folder (e.g. output_dir/Top of Personal Folders/Inbox.mbox)
+python pst_to_mbox.py --split-folders input.pst output_dir
 ```
+
+A plain mbox file has no folders, so by default all messages go into one file and the
+original folder is kept in each message's `X-Folder` header. Use `--split-folders` to get
+one mbox per folder, which most mail clients can import folder by folder.
 
 ### Standalone Executable
 ```bash

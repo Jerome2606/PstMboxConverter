@@ -10,6 +10,7 @@ import sys
 import logging
 import mailbox
 import email
+import email.utils
 import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,7 +18,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import base64
 
 import re
@@ -34,7 +35,7 @@ except ImportError:
 class PSTToMboxConverter:
     """Convert PST files to mbox format with progress tracking and error handling."""
     
-    def __init__(self, pst_file, output_file, verbose=False):
+    def __init__(self, pst_file, output_file, verbose=False, split_folders=False):
         """
         Initialize the converter.
         
@@ -42,13 +43,17 @@ class PSTToMboxConverter:
             pst_file (str): Path to the input PST file
             output_file (str): Path to the output mbox file
             verbose (bool): Enable verbose logging
+            split_folders (bool): Write one mbox per PST folder into the output directory
         """
         self.pst_file = Path(pst_file)
         self.output_file = Path(output_file)
         self.verbose = verbose
+        self.split_folders = split_folders
+        self.mboxes = {}
         self.processed_emails = 0
         self.failed_emails = 0
         self.processed_folders = 0
+        self.skipped_items = 0
         self.total_size = 0
 
         #self.result_collector_list = []
@@ -82,9 +87,15 @@ class PSTToMboxConverter:
         # Check if output directory exists, create if not
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Check if output file already exists
-        if self.output_file.exists():
-            response = input(f"Output file {self.output_file} already exists. Overwrite? (y/N): ")
+        # Check if output file (or, when splitting, a non-empty output directory) already exists
+        if self.split_folders:
+            if self.output_file.is_file():
+                raise ValueError(f"Output path is a file, but --split-folders needs a directory: {self.output_file}")
+            exists = self.output_file.is_dir() and any(self.output_file.iterdir())
+        else:
+            exists = self.output_file.exists()
+        if exists:
+            response = input(f"Output {self.output_file} already exists. Overwrite? (y/N): ")
             if response.lower() not in ['y', 'yes']:
                 raise ValueError("Operation cancelled by user")
     
@@ -185,6 +196,7 @@ class PSTToMboxConverter:
         
         sender_name = "Unknown Sender"
         sender_email = "Unknown Email"
+        from_item = from_item or ""
         if from_item_exists:
             sender_re = re.search(r"(.+?)\n? <(.+?)>", from_item)
             if sender_re:
@@ -227,6 +239,54 @@ class PSTToMboxConverter:
         except (SystemError, ValueError, UnicodeDecodeError, OverflowError) as e:
             self.logger.debug(f"Failed to read attribute '{attr}': {e}")
             return default
+
+    PST_PROPERTY_TAGS = (0x001A, 0x0042, 0x0065, 0x0C1A, 0x0C1E, 0x0C1F, 0x0E02, 0x0E03, 0x0E04,
+                         0x1035, 0x1039, 0x1042, 0x5D01)
+
+    def read_pst_properties(self, pst_message):
+        """Read selected string properties from the message's first record set, keyed by property tag."""
+        props = {}
+        try:
+            for entry in pst_message.record_sets[0].entries:
+                if entry.entry_type not in self.PST_PROPERTY_TAGS:
+                    continue
+                try:
+                    data = entry.data
+                    if not data:
+                        continue
+                    if entry.value_type == 0x1F:
+                        props[entry.entry_type] = data.decode('utf-16-le', 'replace').rstrip('\0').strip()
+                    elif entry.value_type == 0x1E:
+                        props[entry.entry_type] = data.decode('latin-1').rstrip('\0').strip()
+                except (SystemError, ValueError, UnicodeDecodeError, OverflowError) as e:
+                    self.logger.debug(f"Failed to read property {entry.entry_type:#06x}: {e}")
+        except (IndexError, SystemError, ValueError, OverflowError, AttributeError) as e:
+            self.logger.debug(f"Failed to read PST properties: {e}")
+        return props
+
+    @staticmethod
+    def first_address(*candidates):
+        """Return the first candidate that looks like an SMTP address (Exchange DNs are skipped)."""
+        for candidate in candidates:
+            if candidate and re.fullmatch(r"[^\s<>@]+@[^\s<>@]+", candidate.strip("'\" ")):
+                return candidate.strip("'\" ")
+        return None
+
+    def format_display_recipients(self, display_text):
+        """Turn a PST display string such as "A; 'b@x.com'; C" into a header value."""
+        if not display_text:
+            return ""
+        recipients = []
+        for part in display_text.split(';'):
+            part = part.strip()
+            if not part:
+                continue
+            address = self.first_address(part)
+            if address:
+                recipients.append(address)
+            else:
+                recipients.append(self.format_email_address("undisclosed@invalid", part.strip("'\"")))
+        return ', '.join(recipients)
 
     def convert_pst_message_to_email(self, pst_message, folder_path=""):
         """Convert a PST message to an email.message.Message object."""
@@ -282,87 +342,62 @@ class PSTToMboxConverter:
                 msg = MIMEText(body_text or "(No content)", 'plain', 'utf-8')
             
             # Add headers
-            subject = getattr(pst_message, 'subject', '') or "(No Subject)"
+            msg['Subject'] = self.safe_get_attr(pst_message, 'subject', '') or "(No Subject)"
 
-            msg['Subject'] = subject
-            
-            # start of merge-try
-            hih = HeaderItemsHelper(pst_message.transport_headers)          
-            sender_name, sender_email, delivery_time = self.extract_from_and_time_values(hih)
-            
-            if (sender_email == "Unknown Email"):
-                item_from = hih.get_header_item('From') #get FROM item to check, what went wrong
-                #print(f'??????????????? From value: >>>{item_from[1] if item_from[0] else "Unknown From"}<<<')
-                #self.result_collector_list.append(f'--------------;>>>{item_from[1] if item_from[0] else "Unknown From"}<<<;;')
-                if item_from[0]:
-                    self.logger.info(f"Couldn't deal with below \"FROM:\" item data in email transport header:\n{item_from[1]}")
-                else:
-                    self.logger.info(f"Couldn't find \"FROM:\" item in email transport header!")                    
-            else:
-                msg['From'] = self.format_email_address(sender_email, sender_name)
-                # Set mbox unix from line for correct sender display
-                '''
-                delivery_time = getattr(pst_message, 'delivery_time', None)
-                #delivery_time already set by function self.extract_from_and_time_values
-                '''
-                if not delivery_time and transport_headers:
-                    date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
-                    if date_match:
-                        try:
-                            delivery_time = email.utils.parsedate_to_datetime(date_match.group(1).strip())
-                        except Exception:
-                            delivery_time = None
-                if delivery_time:
-                    unix_date = delivery_time.strftime('%a %b %d %H:%M:%S %Y')
-                else:
-                    unix_date = datetime.now().strftime('%a %b %d %H:%M:%S %Y')
-                msg.set_unixfrom(f'From {sender_email} {unix_date}')
-            
-            # Recipients
-            recipients = []
-            try:
-                if hasattr(pst_message, 'recipients') and pst_message.recipients:
-                    for recipient in pst_message.recipients:
-                        recipient_email = self.safe_get_attr(recipient, 'email_address', '')
-                        recipient_name = self.safe_get_attr(recipient, 'name', '')
-                        if recipient_email:
-                            recipients.append(self.format_email_address(recipient_email, recipient_name))
-            except (SystemError, ValueError, UnicodeDecodeError, OverflowError) as e:
-                self.logger.debug(f"Failed to read recipients: {e}")
-            
-            if recipients:
-                msg['To'] = ', '.join(recipients)
-            
+            transport_headers = self.safe_get_attr(pst_message, 'transport_headers', '') or ""
+            hih = HeaderItemsHelper(transport_headers)
+            props = self.read_pst_properties(pst_message)
 
-            msg['Date'] = delivery_time
-            ''' date handling seems to be done above already
-            # Date
-            delivery_time = self.safe_get_attr(pst_message, 'delivery_time', None)
-            if not delivery_time and transport_headers:
-                date_match = re.search(r'^Date:\s*(.+)', transport_headers, re.MULTILINE | re.IGNORECASE)
-                if date_match:
-                    try:
-                        delivery_time = email.utils.parsedate_to_datetime(date_match.group(1).strip())
-                    except Exception:
-                        delivery_time = None
+            # From: transport header first, then the sender properties stored in the PST
+            sender_name, sender_email, date_header = self.extract_from_and_time_values(hih)
+            if sender_email == "Unknown Email":
+                sender_name = props.get(0x0C1A) or props.get(0x0042) or ""
+                sender_email = self.first_address(props.get(0x5D01), props.get(0x0C1F), props.get(0x0065))
+                if not sender_email:
+                    sender_email = "unknown@invalid"
+                    self.logger.debug("No sender address found in transport header or PST properties")
+            msg['From'] = self.format_email_address(sender_email, sender_name)
 
+            # Date: transport header first, then submit/delivery time (PST times are UTC)
+            delivery_time = None
+            if hih.contains_header_item('Date'):
+                try:
+                    delivery_time = email.utils.parsedate_to_datetime(date_header)
+                except (TypeError, ValueError):
+                    delivery_time = None
+            if not delivery_time:
+                delivery_time = (self.safe_get_attr(pst_message, 'client_submit_time', None)
+                                 or self.safe_get_attr(pst_message, 'delivery_time', None))
+                if delivery_time and delivery_time.tzinfo is None:
+                    delivery_time = delivery_time.replace(tzinfo=timezone.utc)
             if delivery_time:
-                try:
-                    msg['Date'] = delivery_time.strftime('%a, %d %b %Y %H:%M:%S %z')
-                except Exception:
-                    msg['Date'] = delivery_time.isoformat()
+                msg['Date'] = email.utils.format_datetime(delivery_time)
+                unix_date = delivery_time.strftime('%a %b %d %H:%M:%S %Y')
             else:
-                msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
-            '''
+                unix_date = datetime.now().strftime('%a %b %d %H:%M:%S %Y')
+            # Set mbox unix from line for correct sender display
+            msg.set_unixfrom(f'From {sender_email} {unix_date}')
 
-            # Message ID
-            if transport_headers and 'Message-ID:' in transport_headers:
-                try:
-                    msg_id = transport_headers.split('Message-ID:')[1].split('\n')[0].strip()
-                    msg['Message-ID'] = msg_id
-                except:
-                    pass
-            
+            # To / Cc / Bcc: transport header first, then the display strings stored in the PST
+            for header, tag in (('To', 0x0E04), ('Cc', 0x0E03), ('Bcc', 0x0E02)):
+                found, value = hih.get_header_item(header)
+                if found and value:
+                    msg[header] = value
+                else:
+                    recipients = self.format_display_recipients(props.get(tag))
+                    if recipients:
+                        msg[header] = recipients
+
+            # Threading headers
+            for header, tag in (('Message-ID', 0x1035), ('In-Reply-To', 0x1042), ('References', 0x1039),
+                                ('Reply-To', None)):
+                found, value = hih.get_header_item(header)
+                value = value if found and value else (props.get(tag) if tag else None)
+                if value:
+                    msg[header] = value
+            if 'Message-ID' not in msg:
+                msg['Message-ID'] = f"<pst-{self.safe_get_attr(pst_message, 'identifier', id(pst_message))}@pst-to-mbox.invalid>"
+
             # Add folder information as custom header
             if folder_path:
                 msg['X-Folder'] = folder_path
@@ -373,35 +408,70 @@ class PSTToMboxConverter:
             self.logger.error(f"Failed to convert PST message: {e}")
             raise
     
-    def process_messages(self, pst_archive, mbox_file):
+    MAIL_CLASS_PREFIXES = ("IPM.NOTE", "IPM.POST", "IPM.SCHEDULE", "REPORT")
+
+    def iter_messages(self, pst_archive):
+        """Yield (folder path, message) for every message, walking the folder tree depth first."""
+        stack = [("", next(pst_archive.folders()))]
+        while stack:
+            path, folder = stack.pop()
+            name = self.safe_get_attr(folder, 'name', '') or ''
+            folder_path = f"{path}/{name}" if name else path
+            try:
+                for message in folder.sub_messages:
+                    yield folder_path.lstrip('/') or "Unknown", message
+                self.processed_folders += 1
+                stack.extend((folder_path, sub) for sub in reversed(list(folder.sub_folders)))
+            except OSError as e:
+                self.logger.debug(f"Failed to read folder '{folder_path}': {e}")
+
+    @staticmethod
+    def safe_path_part(name):
+        """Make a PST folder name usable as a file or directory name."""
+        cleaned = re.sub(r'[<>:"\\|?*\x00-\x1f/]', '_', name).strip().rstrip('.')
+        return cleaned or '_'
+
+    def get_mbox(self, folder_path):
+        """Return the mbox that messages of this folder are written to, opening it on first use."""
+        key = folder_path if self.split_folders else None
+        if key not in self.mboxes:
+            if key is None:
+                path = self.output_file
+            else:
+                parts = [self.safe_path_part(part) for part in folder_path.split('/')]
+                path = self.output_file.joinpath(*parts[:-1], parts[-1] + '.mbox')
+                path.parent.mkdir(parents=True, exist_ok=True)
+            mbox_file = mailbox.mbox(str(path))
+            mbox_file.lock()
+            self.mboxes[key] = mbox_file
+        return self.mboxes[key]
+
+    def close_mboxes(self):
+        """Flush and close every open mbox."""
+        for mbox_file in self.mboxes.values():
+            try:
+                mbox_file.flush()
+            finally:
+                mbox_file.unlock()
+                mbox_file.close()
+
+    def process_messages(self, pst_archive):
         """Process all messages in the PST archive."""
         try:
             self.logger.info("Processing messages from PST archive...")
             
-            # Use libratom's messages() generator to iterate through all messages
             message_count = 0
-            for pst_message in pst_archive.messages():
-                '''
-                if message_count == 0:
-                    print(f'Object attributes: {dir(pst_message)}')
-                    header_items = self.header_to_dict(pst_message.transport_headers)
-                    for k in header_items.keys():
-                        print(f"Key: {k} --- Value: {header_items[k]}")
-                    print(f'transport_headers: {pst_message.transport_headers} ')
-
-                '''
-
+            for folder_path, pst_message in self.iter_messages(pst_archive):
                 try:
-                    # Get folder path if available
-                    folder_path = "Unknown"
-                    try:
-                        if hasattr(pst_message, 'folder') and pst_message.folder:
-                            folder_path = self.safe_get_attr(pst_message.folder, 'name', 'Unknown')
-                    except (SystemError, ValueError, UnicodeDecodeError, OverflowError):
-                        pass
-                    
+                    # Contacts, calendar entries etc. are not mail and can't be represented in mbox
+                    message_class = self.read_pst_properties(pst_message).get(0x001A, "IPM.Note")
+                    if not message_class.upper().startswith(self.MAIL_CLASS_PREFIXES):
+                        self.skipped_items += 1
+                        self.logger.debug(f"Skipping non-mail item ({message_class}) in {folder_path}")
+                        continue
+
                     email_msg = self.convert_pst_message_to_email(pst_message, folder_path)
-                    mbox_file.add(email_msg)
+                    self.get_mbox(folder_path).add(email_msg)
                     self.processed_emails += 1
                     message_count += 1
                     
@@ -410,7 +480,7 @@ class PSTToMboxConverter:
                 
                 except Exception as e:
                     self.failed_emails += 1
-                    self.logger.error(f"Failed to process message {message_count}: {e}")
+                    self.logger.error(f"Failed to process message {message_count} in {folder_path}: {e}")
             
             self.logger.info(f"Finished processing {message_count} messages")
         
@@ -430,34 +500,36 @@ class PSTToMboxConverter:
             # Open PST file
             pst_archive = self.open_pst_file()
             
-            # Create mbox file
-            mbox_file = mailbox.mbox(str(self.output_file))
-            mbox_file.lock()
-            
             try:
+                # Single-file mode always creates the output file, even for an empty PST
+                if not self.split_folders:
+                    self.get_mbox(None)
+
                 # Process all messages
-                self.process_messages(pst_archive, mbox_file)
-                
-                # Flush and close mbox file
-                mbox_file.flush()
+                self.process_messages(pst_archive)
                 
             finally:
-                mbox_file.unlock()
-                mbox_file.close()
+                self.close_mboxes()
             
             # Calculate statistics
             end_time = time.time()
             duration = end_time - start_time
-            output_size = self.output_file.stat().st_size if self.output_file.exists() else 0
+            if self.split_folders:
+                output_size = sum(f.stat().st_size for f in self.output_file.rglob('*.mbox'))
+            else:
+                output_size = self.output_file.stat().st_size if self.output_file.exists() else 0
             
             # Print final statistics
             self.logger.info("\n" + "="*50)
             self.logger.info("CONVERSION COMPLETED SUCCESSFULLY")
             self.logger.info("="*50)
             self.logger.info(f"Input file: {self.pst_file}")
-            self.logger.info(f"Output file: {self.output_file}")
+            self.logger.info(f"Output {'directory' if self.split_folders else 'file'}: {self.output_file}")
+            if self.split_folders:
+                self.logger.info(f"Folder mbox files: {len(self.mboxes)}")
             self.logger.info(f"Processed emails: {self.processed_emails}")
             self.logger.info(f"Failed emails: {self.failed_emails}")
+            self.logger.info(f"Skipped non-mail items: {self.skipped_items}")
             self.logger.info(f"Attachments found: {self.attachments_found}")
             self.logger.info(f"Attachments extracted: {self.attachments_extracted} ({self.attachment_bytes / (1024*1024):.2f} MB)")
             self.logger.info(f"Output file size: {output_size / (1024*1024):.2f} MB")
@@ -482,6 +554,7 @@ def main():
 Examples:
   %(prog)s input.pst output.mbox
   %(prog)s -v /path/to/outlook.pst /path/to/emails.mbox
+  %(prog)s --split-folders input.pst output_dir
   %(prog)s --verbose "C:\\Users\\Name\\Documents\\Outlook.pst" "emails.mbox"
         """
     )
@@ -493,13 +566,19 @@ Examples:
     
     parser.add_argument(
         'output_file',
-        help='Path to the output mbox file'
+        help='Path to the output mbox file (or directory when --split-folders is used)'
     )
     
     parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='Enable verbose output'
+    )
+    
+    parser.add_argument(
+        '--split-folders',
+        action='store_true',
+        help='Write one mbox file per PST folder into the output directory instead of a single mbox'
     )
     
     parser.add_argument(
@@ -511,7 +590,7 @@ Examples:
     args = parser.parse_args()
     
     # Create converter and run conversion
-    converter = PSTToMboxConverter(args.pst_file, args.output_file, args.verbose)
+    converter = PSTToMboxConverter(args.pst_file, args.output_file, args.verbose, args.split_folders)
     
     try:
         success = converter.convert()
